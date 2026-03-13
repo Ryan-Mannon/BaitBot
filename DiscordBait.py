@@ -66,7 +66,7 @@ async def on_message(message):
 
 # --- Bait command ---
 @bot.command()
-@commands.cooldown(1, 1800, commands.BucketType.user)
+@commands.cooldown(1, 86400, commands.BucketType.user)
 async def bait(ctx, member: discord.Member, *, reason: str = None):
 
     user_id = str(member.id)
