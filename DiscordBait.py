@@ -194,6 +194,49 @@ async def leaderboard(ctx):
 
 
 
+
+# --- Admin-only delete command ---
+OWNER_ID = 291415368722022400  # Ryan's Discord ID
+
+@bot.command()
+async def delete(ctx, member: discord.Member):
+    """Delete all bait data for a user (owner-only)."""
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("You are not authorized to use this command.")
+        return
+
+    user_id = str(member.id)
+
+    if user_id in scores or user_id in baits_data or user_id in debait_cooldowns:
+        # backup before deletion
+        backup_file = f"bait_data_backup_{int(time.time())}.json"
+        save_data({
+            "scores": scores,
+            "baits": baits_data,
+            "debait_cooldowns": debait_cooldowns
+        })
+        await ctx.send(f"Backed up current data to `{backup_file}`")
+
+        # Remove user's data
+        scores.pop(user_id, None)
+        baits_data.pop(user_id, None)
+        debait_cooldowns.pop(user_id, None)
+
+        # Save updated JSON
+        save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
+
+        await ctx.send(f"All data for **{member.display_name}** has been deleted.")
+    else:
+        await ctx.send(f"No data found for **{member.display_name}**.")
+
+
+
+
+
+
+
+
+
 # --- Cooldowns command ---
 @bot.command()
 async def cooldowns(ctx):
