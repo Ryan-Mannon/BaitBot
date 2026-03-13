@@ -13,7 +13,7 @@ BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = "bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
 OWNER_ID = 291415368722022400
-GIT_REPO_PATH = "/root/BaitBot"  # Path to your local Git repo
+GIT_REPO_PATH = "/root/BaitBot"  # Path to local Git repo
 # ----------------------------
 
 intents = discord.Intents.default()
