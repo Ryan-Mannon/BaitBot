@@ -83,10 +83,6 @@ async def on_message(message):
 # --- Bait command ---
 @bot.command()
 async def bait(ctx, member: discord.Member, *, reason: str = None):
-    if member.id == ctx.author.id:
-        await ctx.send("You cannot bait yourself!")
-        return
-
     author_id = str(ctx.author.id)
     user_id = str(member.id)
     now = time.time()
