@@ -104,11 +104,21 @@ async def debait(ctx, member: discord.Member):
     last_used = debait_cooldowns.get(author_id, 0)
     cooldown_seconds = 86400  # 24 hours
 
-    if now - last_used < cooldown_seconds:
-        remaining = int(cooldown_seconds - (now - last_used))
+    remaining = int(max(0, cooldown_seconds - (now - last_used)))
+
+    if remaining > 0:
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
-        await ctx.send(f"Wait **{hours}h {minutes}m**")
+        seconds = remaining % 60
+
+        parts = []
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0 or hours > 0:  # show minutes if there are hours or minutes
+            parts.append(f"{minutes}m")
+        parts.append(f"{seconds}s")
+
+        await ctx.send(f"Wait {' '.join(parts)} before using debait again.")
         return
 
     # Subtract point (cannot go below 0)
