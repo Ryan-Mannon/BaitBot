@@ -10,6 +10,9 @@ import time
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = "bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
+BAIT_COOLDOWN = 1800      # 30 minutes
+DEBAIT_COOLDOWN = 86400   # 24 hours
+OWNER_ID = 291415368722022400
 # ----------------------------
 
 intents = discord.Intents.default()
@@ -19,7 +22,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ---------- DATA HELPERS ----------
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"scores": {}, "baits": {}, "debait_cooldowns": {}}
+        return {"scores": {}, "baits": {}, "bait_cooldowns": {}, "debait_cooldowns": {}}
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
@@ -27,10 +30,13 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# Load data on startup
 data = load_data()
 scores = data.get("scores", {})
 baits_data = data.get("baits", {})
+bait_cooldowns = data.get("bait_cooldowns", {})
 debait_cooldowns = data.get("debait_cooldowns", {})
+
 # ---------------------------------
 
 @bot.event
@@ -66,16 +72,26 @@ async def on_message(message):
 
 # --- Bait command ---
 @bot.command()
-@commands.cooldown(1, 86400, commands.BucketType.user)
 async def bait(ctx, member: discord.Member, *, reason: str = None):
+    author_id = str(ctx.author.id)
+    now = time.time()
+    last_used = bait_cooldowns.get(author_id, 0)
 
+    if now - last_used < BAIT_COOLDOWN:
+        remaining = int(BAIT_COOLDOWN - (now - last_used))
+        minutes = remaining // 60
+        seconds = remaining % 60
+        await ctx.send(f"Wait {minutes}m {seconds}s before using this command again.")
+        return
+
+    # Update last used time
+    bait_cooldowns[author_id] = now
+
+    # Update scores
     user_id = str(member.id)
-
-    # Update score
     scores[user_id] = scores.get(user_id, 0) + 1
 
-
-    # Store reason (max 10)
+    # Store reason
     if reason:
         if user_id not in baits_data:
             baits_data[user_id] = []
@@ -83,7 +99,13 @@ async def bait(ctx, member: discord.Member, *, reason: str = None):
         if len(baits_data[user_id]) > 10:
             baits_data[user_id] = baits_data[user_id][-10:]
 
-    save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
+    # Save everything
+    save_data({
+        "scores": scores,
+        "baits": baits_data,
+        "bait_cooldowns": bait_cooldowns,
+        "debait_cooldowns": debait_cooldowns
+    })
 
     reply = f"🎣 **{member.display_name}** has baited! ➕ 1 point (Total: **{scores[user_id]}**)"
     if reason:
@@ -99,25 +121,29 @@ async def debait(ctx, member: discord.Member):
 
     author_id = str(ctx.author.id)
     user_id = str(member.id)
-
     now = time.time()
     last_used = debait_cooldowns.get(author_id, 0)
-    cooldown_seconds = 86400  # 24 hours
 
-    if now - last_used < cooldown_seconds:
-        remaining = int(cooldown_seconds - (now - last_used))
+    if now - last_used < DEBAIT_COOLDOWN:
+        remaining = int(DEBAIT_COOLDOWN - (now - last_used))
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
-        await ctx.send(f"Wait **{hours}h {minutes}m**")
+        await ctx.send(f"Wait **{hours}h {minutes}m** before using debait.")
         return
+
+    # Update last used time
+    debait_cooldowns[author_id] = now
 
     # Subtract point (cannot go below 0)
     scores[user_id] = max(scores.get(user_id, 0) - 1, 0)
 
-    # Update cooldown
-    debait_cooldowns[author_id] = now
-
-    save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
+    # Save everything
+    save_data({
+        "scores": scores,
+        "baits": baits_data,
+        "bait_cooldowns": bait_cooldowns,
+        "debait_cooldowns": debait_cooldowns
+    })
 
     await ctx.send(f"🪝 **{member.display_name}** lost 1 bait point (Total: **{scores[user_id]}**)!")
 
@@ -128,14 +154,10 @@ async def score(ctx, member: discord.Member = None):
     user_id = str(member.id)
     await ctx.send(f"**{member.display_name}** has **{scores.get(user_id,0)}** bait points.")
 
-
-
-
-
-# --- Paginated leaderboard ---
+# --- Leaderboard ---
 @bot.command()
 async def leaderboard(ctx):
-    # Reload fresh data each time
+    # Always load fresh scores
     data = load_data()
     scores = data.get("scores", {})
 
@@ -143,16 +165,12 @@ async def leaderboard(ctx):
         await ctx.send("No bait has been recorded yet 🐟")
         return
 
-    # Sort users by score descending
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     pages = [sorted_scores[i:i+10] for i in range(0, len(sorted_scores), 10)]
     current_page = 0
 
     async def make_embed(page_index):
-        embed = discord.Embed(
-            title="🎣 Bait Leaderboard",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title="🎣 Bait Leaderboard", color=discord.Color.gold())
         lines = []
         for i, (user_id, score) in enumerate(pages[page_index]):
             user = bot.get_user(int(user_id))
@@ -164,7 +182,6 @@ async def leaderboard(ctx):
 
     embed = await make_embed(current_page)
     view = View()
-
     if len(pages) > 1:
         button_prev = Button(label="⬅️", style=discord.ButtonStyle.gray)
         button_next = Button(label="➡️", style=discord.ButtonStyle.gray)
@@ -192,90 +209,7 @@ async def leaderboard(ctx):
 
     await ctx.send(embed=embed, view=view)
 
-
-
-
-
-
-
-# --- Admin-only delete command ---
-OWNER_ID = 291415368722022400  # Ryan's Discord ID
-
-@bot.command()
-async def delete(ctx, member: discord.Member):
-    """Delete all bait data for a user (owner-only)."""
-    if ctx.author.id != OWNER_ID:
-        await ctx.send("You are not authorized to use this command.")
-        return
-
-    user_id = str(member.id)
-
-    if user_id in scores or user_id in baits_data or user_id in debait_cooldowns:
-        # backup before deletion
-        backup_file = f"bait_data_backup_{int(time.time())}.json"
-        save_data({
-            "scores": scores,
-            "baits": baits_data,
-            "debait_cooldowns": debait_cooldowns
-        })
-        await ctx.send(f"Backed up current data to `{backup_file}`")
-
-        # Remove user's data
-        scores.pop(user_id, None)
-        baits_data.pop(user_id, None)
-        debait_cooldowns.pop(user_id, None)
-
-        # Save updated JSON
-        save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
-
-        await ctx.send(f"All data for **{member.display_name}** has been deleted.")
-    else:
-        await ctx.send(f"No data found for **{member.display_name}**.")
-
-
-
-
-
-
-
-
-
-# --- Cooldowns command ---
-@bot.command()
-async def cooldowns(ctx):
-    messages = []
-
-    # Bait cooldown
-    bait_cooldown = bot.get_command("bait").get_cooldown_retry_after(ctx)
-    if bait_cooldown:
-        bait_hours = int(bait_cooldown // 3600)
-        bait_minutes = int((bait_cooldown % 3600) // 60)
-        bait_seconds = int(bait_cooldown % 60)
-        bait_str = ""
-        if bait_hours > 0:
-            bait_str += f"{bait_hours}h "
-        if bait_minutes > 0 or bait_hours > 0:
-            bait_str += f"{bait_minutes}m "
-        bait_str += f"{bait_seconds}s"
-        messages.append(f"🎣 **Bait:** {bait_str}")
-    else:
-        messages.append("🎣 **Bait:** Ready!")
-
-    # Debait cooldown
-    author_id = str(ctx.author.id)
-    now = time.time()
-    last_used = debait_cooldowns.get(author_id, 0)
-    remaining = int(max(0, 86400 - (now - last_used)))
-    if remaining > 0:
-        hours = remaining // 3600
-        minutes = (remaining % 3600) // 60
-        messages.append(f"🪝 **Debait:** {hours}h {minutes}m remaining")
-    else:
-        messages.append("🪝 **Debait:** Ready!")
-
-    await ctx.send("\n".join(messages))
-
-# --- Show bait reasons (paginated) ---
+# --- Show bait reasons ---
 @bot.command()
 async def baits(ctx, member: discord.Member):
     user_id = str(member.id)
@@ -293,7 +227,6 @@ async def baits(ctx, member: discord.Member):
         color=discord.Color.gold()
     )
     embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
-
     view = View()
 
     if len(pages) > 1:
@@ -312,7 +245,7 @@ async def baits(ctx, member: discord.Member):
 
         async def next_callback(interaction):
             nonlocal current_page
-            if current_page < len(pages)-1:
+            if current_page < len(pages) - 1:
                 current_page += 1
                 embed.description = "\n".join(f"{i+1 + current_page*10}. {r}" for i, r in enumerate(pages[current_page]))
                 embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
@@ -327,53 +260,82 @@ async def baits(ctx, member: discord.Member):
 
     await ctx.send(embed=embed, view=view)
 
+# --- Cooldowns command ---
+@bot.command()
+async def cooldowns(ctx):
+    messages = []
 
-# --- Command to display available commands ---
+    # Bait cooldown
+    author_id = str(ctx.author.id)
+    now = time.time()
+    last_bait = bait_cooldowns.get(author_id, 0)
+    remaining_bait = int(max(0, BAIT_COOLDOWN - (now - last_bait)))
+    if remaining_bait > 0:
+        minutes = remaining_bait // 60
+        seconds = remaining_bait % 60
+        messages.append(f"🎣 **Bait:** {minutes}m {seconds}s remaining")
+    else:
+        messages.append("🎣 **Bait:** Ready!")
+
+    # Debait cooldown
+    last_debait = debait_cooldowns.get(author_id, 0)
+    remaining_debait = int(max(0, DEBAIT_COOLDOWN - (now - last_debait)))
+    if remaining_debait > 0:
+        hours = remaining_debait // 3600
+        minutes = (remaining_debait % 3600) // 60
+        messages.append(f"🪝 **Debait:** {hours}h {minutes}m remaining")
+    else:
+        messages.append("🪝 **Debait:** Ready!")
+
+    await ctx.send("\n".join(messages))
+
+# --- Admin delete command ---
+@bot.command()
+async def delete(ctx, member: discord.Member):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("You are not authorized to use this command.")
+        return
+
+    user_id = str(member.id)
+    if user_id in scores or user_id in baits_data or user_id in bait_cooldowns or user_id in debait_cooldowns:
+        # Backup
+        backup_file = f"bait_data_backup_{int(time.time())}.json"
+        save_data({
+            "scores": scores,
+            "baits": baits_data,
+            "bait_cooldowns": bait_cooldowns,
+            "debait_cooldowns": debait_cooldowns
+        })
+        await ctx.send(f"Backed up current data to `{backup_file}`")
+
+        # Delete user data
+        scores.pop(user_id, None)
+        baits_data.pop(user_id, None)
+        bait_cooldowns.pop(user_id, None)
+        debait_cooldowns.pop(user_id, None)
+
+        save_data({
+            "scores": scores,
+            "baits": baits_data,
+            "bait_cooldowns": bait_cooldowns,
+            "debait_cooldowns": debait_cooldowns
+        })
+
+        await ctx.send(f"All data for **{member.display_name}** has been deleted.")
+    else:
+        await ctx.send(f"No data found for **{member.display_name}**.")
+
+# --- Commands list ---
 @bot.command()
 async def commands(ctx):
-    embed = discord.Embed(
-        title="🎣 Bait Bot Commands",
-        color=discord.Color.blue()
-    )
-
-    embed.add_field(
-        name="!bait @user <reason>",
-        value="Add 1 point to a user for baiting. Reason optional. 30-minute cooldown",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!debait @user",
-        value="Remove 1 point from a user. 24-hour cooldown.",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!score @user",
-        value="Check the bait score of a user (defaults to yourself if no user is mentioned).",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!leaderboard",
-        value="Display the top 10 users by bait points.",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!baits @user",
-        value="View the most recent 10 bait reasons for a user.",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!cooldowns",
-        value="See your current command cooldowns for bait and debait.",
-        inline=False
-    )
-
+    embed = discord.Embed(title="🎣 Bait Bot Commands", color=discord.Color.blue())
+    embed.add_field(name="!bait @user <reason>", value="Add 1 point to a user for baiting. Reason optional. 30-minute cooldown", inline=False)
+    embed.add_field(name="!debait @user", value="Remove 1 point from a user. 24-hour cooldown.", inline=False)
+    embed.add_field(name="!score @user", value="Check the bait score of a user (defaults to yourself if no user is mentioned).", inline=False)
+    embed.add_field(name="!leaderboard", value="Display the top 10 users by bait points.", inline=False)
+    embed.add_field(name="!baits @user", value="View the most recent 10 bait reasons for a user.", inline=False)
+    embed.add_field(name="!cooldowns", value="See your current command cooldowns for bait and debait.", inline=False)
     await ctx.send(embed=embed)
-
 
 # ---------- COOLDOWN ERROR HANDLER ----------
 @bot.event
@@ -383,14 +345,12 @@ async def on_command_error(ctx, error):
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
         seconds = remaining % 60
-
         time_parts = []
         if hours > 0:
             time_parts.append(f"{hours}h")
         if minutes > 0:
             time_parts.append(f"{minutes}m")
         time_parts.append(f"{seconds}s")
-
         await ctx.send(f"Wait {' '.join(time_parts)} before using this command again.")
     else:
         raise error
