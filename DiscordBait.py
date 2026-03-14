@@ -116,7 +116,7 @@ async def debait(ctx, member: discord.Member):
             parts.append(f"{hours}h")
         if minutes > 0 or hours > 0:  # show minutes if there are hours or minutes
             parts.append(f"{minutes}m")
-        parts.append(f"{seconds}s")
+        parts.append(f"{seconds}s")  # always include seconds
 
         await ctx.send(f"Wait {' '.join(parts)} before using debait again.")
         return
@@ -131,6 +131,8 @@ async def debait(ctx, member: discord.Member):
 
     await ctx.send(f"🪝 **{member.display_name}** lost 1 bait point (Total: **{scores[user_id]}**)!")
 
+
+    
 # --- Check score ---
 @bot.command()
 async def score(ctx, member: discord.Member = None):
