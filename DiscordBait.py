@@ -255,44 +255,25 @@ async def delete(ctx, member: discord.Member):
     else:
         await ctx.send(f"No data found for **{member.display_name}**.")
 
-# --- Cooldowns command (updated for persistent bait & debait) ---
+# --- Cooldowns command ---
 @bot.command()
 async def cooldowns(ctx):
-    author_id = str(ctx.author.id)
-    now = time.time()
     messages = []
 
-    # --- Bait cooldown ---
-    last_bait = debait_cooldowns.get(author_id, {}).get("bait", 0)
-    remaining_bait = int(max(0, 86400 - (now - last_bait)))  # 24 hours
-    if remaining_bait > 0:
-        hours = remaining_bait // 3600
-        minutes = (remaining_bait % 3600) // 60
-        seconds = remaining_bait % 60
-        time_parts = []
-        if hours > 0:
-            time_parts.append(f"{hours}h")
-        if minutes > 0 or hours > 0:
-            time_parts.append(f"{minutes}m")
-        time_parts.append(f"{seconds}s")
-        messages.append(f"🎣 **Bait:** {' '.join(time_parts)} remaining")
+    # Bait cooldown
+    bait_cooldown = bot.get_command("bait").get_cooldown_retry_after(ctx)
+    if bait_cooldown:
+        messages.append(f"🎣 **Bait:** {format_cooldown(int(bait_cooldown))} remaining")
     else:
         messages.append("🎣 **Bait:** Ready!")
 
-    # --- Debait cooldown ---
-    last_debait = debait_cooldowns.get(author_id, {}).get("debait", 0)
-    remaining_debait = int(max(0, 86400 - (now - last_debait)))  # 24 hours
-    if remaining_debait > 0:
-        hours = remaining_debait // 3600
-        minutes = (remaining_debait % 3600) // 60
-        seconds = remaining_debait % 60
-        time_parts = []
-        if hours > 0:
-            time_parts.append(f"{hours}h")
-        if minutes > 0 or hours > 0:
-            time_parts.append(f"{minutes}m")
-        time_parts.append(f"{seconds}s")
-        messages.append(f"🪝 **Debait:** {' '.join(time_parts)} remaining")
+    # Debait cooldown
+    author_id = str(ctx.author.id)
+    now = time.time()
+    last_used = debait_cooldowns.get(author_id, 0)
+    remaining = int(max(0, 86400 - (now - last_used)))
+    if remaining > 0:
+        messages.append(f"🪝 **Debait:** {format_cooldown(remaining)} remaining")
     else:
         messages.append("🪝 **Debait:** Ready!")
 
