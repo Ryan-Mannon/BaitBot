@@ -132,7 +132,7 @@ async def debait(ctx, member: discord.Member):
     await ctx.send(f"🪝 **{member.display_name}** lost 1 bait point (Total: **{scores[user_id]}**)!")
 
 
-    
+
 # --- Check score ---
 @bot.command()
 async def score(ctx, member: discord.Member = None):
@@ -278,7 +278,8 @@ async def cooldowns(ctx):
     if remaining > 0:
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
-        messages.append(f"🪝 **Debait:** {hours}h {minutes}m remaining")
+        seconds = int(remaining % 60)
+        messages.append(f"🪝 **Debait:** {hours}h {minutes}m {seconds}s")
     else:
         messages.append("🪝 **Debait:** Ready!")
 
