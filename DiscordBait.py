@@ -5,43 +5,16 @@ from discord.ui import View, Button
 import json
 import os
 import time
-import asyncio
-import subprocess
 
 # ---------- CONFIG ----------
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = "bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
-OWNER_ID = 291415368722022400
-GIT_REPO_PATH = "/root/BaitBot"  # Path to local Git repo
 # ----------------------------
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-# ---------- GIT HELPERS ----------
-async def async_push_json():
-    """Commit and push the JSON file to GitHub asynchronously."""
-    try:
-        cmds = [
-            ["git", "-C", GIT_REPO_PATH, "add", DATA_FILE],
-            ["git", "-C", GIT_REPO_PATH, "commit", "-m", f"Update {DATA_FILE} at {time.strftime('%Y-%m-%d %H:%M:%S')}"],
-            ["git", "-C", GIT_REPO_PATH, "push"]
-        ]
-        for cmd in cmds:
-            subprocess.run(cmd, check=True)
-        print(f"[INFO] {DATA_FILE} pushed to GitHub successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Git push failed: {e}")
-
-def pull_latest_json():
-    """Pull the latest JSON file from GitHub synchronously."""
-    try:
-        subprocess.run(["git", "-C", GIT_REPO_PATH, "pull"], check=True)
-        print(f"[INFO] Pulled latest {DATA_FILE} from GitHub.")
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Git pull failed: {e}")
 
 # ---------- DATA HELPERS ----------
 def load_data():
@@ -54,14 +27,12 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# ---------- PULL LATEST DATA ON STARTUP ----------
-pull_latest_json()
 data = load_data()
 scores = data.get("scores", {})
 baits_data = data.get("baits", {})
 debait_cooldowns = data.get("debait_cooldowns", {})
+# ---------------------------------
 
-# ---------- BOT EVENTS ----------
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
@@ -79,6 +50,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # Auto-react for top scorer
     top_scorer_id = get_top_scorer()
     if top_scorer_id and message.author.id == top_scorer_id:
         try:
@@ -91,12 +63,19 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ---------- COMMANDS ----------
+
+# --- Bait command ---
 @bot.command()
 @commands.cooldown(1, 86400, commands.BucketType.user)
 async def bait(ctx, member: discord.Member, *, reason: str = None):
+
     user_id = str(member.id)
+
+    # Update score
     scores[user_id] = scores.get(user_id, 0) + 1
 
+
+    # Store reason (max 10)
     if reason:
         if user_id not in baits_data:
             baits_data[user_id] = []
@@ -105,13 +84,13 @@ async def bait(ctx, member: discord.Member, *, reason: str = None):
             baits_data[user_id] = baits_data[user_id][-10:]
 
     save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
-    asyncio.create_task(async_push_json())
 
     reply = f"🎣 **{member.display_name}** has baited! ➕ 1 point (Total: **{scores[user_id]}**)"
     if reason:
-        reply += "\nReason recorded!"
+        reply += "\n Reason recorded!"
     await ctx.send(reply)
 
+# --- Debait command ---
 @bot.command()
 async def debait(ctx, member: discord.Member):
     if member.id == ctx.author.id:
@@ -120,6 +99,7 @@ async def debait(ctx, member: discord.Member):
 
     author_id = str(ctx.author.id)
     user_id = str(member.id)
+
     now = time.time()
     last_used = debait_cooldowns.get(author_id, 0)
     cooldown_seconds = 86400  # 24 hours
@@ -131,61 +111,35 @@ async def debait(ctx, member: discord.Member):
         await ctx.send(f"Wait **{hours}h {minutes}m**")
         return
 
+    # Subtract point (cannot go below 0)
     scores[user_id] = max(scores.get(user_id, 0) - 1, 0)
+
+    # Update cooldown
     debait_cooldowns[author_id] = now
 
     save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
-    asyncio.create_task(async_push_json())
 
     await ctx.send(f"🪝 **{member.display_name}** lost 1 bait point (Total: **{scores[user_id]}**)!")
 
+# --- Check score ---
 @bot.command()
 async def score(ctx, member: discord.Member = None):
     member = member or ctx.author
     user_id = str(member.id)
     await ctx.send(f"**{member.display_name}** has **{scores.get(user_id,0)}** bait points.")
 
-# --- Admin-only delete ---
-@bot.command()
-async def delete(ctx, member: discord.Member):
-    if ctx.author.id != OWNER_ID:
-        await ctx.send("You are not authorized to use this command.")
-        return
-
-    user_id = str(member.id)
-    if user_id in scores or user_id in baits_data or user_id in debait_cooldowns:
-        backup_file = f"bait_data_backup_{int(time.time())}.json"
-        save_data({
-            "scores": scores,
-            "baits": baits_data,
-            "debait_cooldowns": debait_cooldowns
-        })
-        await ctx.send(f"Backed up current data to `{backup_file}`")
-
-        scores.pop(user_id, None)
-        baits_data.pop(user_id, None)
-        debait_cooldowns.pop(user_id, None)
-
-        save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
-        asyncio.create_task(async_push_json())
-
-        await ctx.send(f"All data for **{member.display_name}** has been deleted.")
-    else:
-        await ctx.send(f"No data found for **{member.display_name}**.")
 
 
 
 
-# --- Leaderboard ---
+# --- Paginated leaderboard ---
 @bot.command()
 async def leaderboard(ctx):
-    data = load_data()
-    scores = data.get("scores", {})
-
     if not scores:
         await ctx.send("No bait has been recorded yet 🐟")
         return
 
+    # Sort all users by score descending
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     pages = [sorted_scores[i:i+10] for i in range(0, len(sorted_scores), 10)]
     current_page = 0
@@ -241,6 +195,183 @@ async def leaderboard(ctx):
 
 
 
+# --- Admin-only delete command ---
+OWNER_ID = 291415368722022400  # Ryan's Discord ID
+
+@bot.command()
+async def delete(ctx, member: discord.Member):
+    """Delete all bait data for a user (owner-only)."""
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("You are not authorized to use this command.")
+        return
+
+    user_id = str(member.id)
+
+    if user_id in scores or user_id in baits_data or user_id in debait_cooldowns:
+        # backup before deletion
+        backup_file = f"bait_data_backup_{int(time.time())}.json"
+        save_data({
+            "scores": scores,
+            "baits": baits_data,
+            "debait_cooldowns": debait_cooldowns
+        })
+        await ctx.send(f"Backed up current data to `{backup_file}`")
+
+        # Remove user's data
+        scores.pop(user_id, None)
+        baits_data.pop(user_id, None)
+        debait_cooldowns.pop(user_id, None)
+
+        # Save updated JSON
+        save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
+
+        await ctx.send(f"All data for **{member.display_name}** has been deleted.")
+    else:
+        await ctx.send(f"No data found for **{member.display_name}**.")
+
+
+
+
+
+
+
+
+
+# --- Cooldowns command ---
+@bot.command()
+async def cooldowns(ctx):
+    messages = []
+
+    # Bait cooldown
+    bait_cooldown = bot.get_command("bait").get_cooldown_retry_after(ctx)
+    if bait_cooldown:
+        bait_hours = int(bait_cooldown // 3600)
+        bait_minutes = int((bait_cooldown % 3600) // 60)
+        bait_seconds = int(bait_cooldown % 60)
+        bait_str = ""
+        if bait_hours > 0:
+            bait_str += f"{bait_hours}h "
+        if bait_minutes > 0 or bait_hours > 0:
+            bait_str += f"{bait_minutes}m "
+        bait_str += f"{bait_seconds}s"
+        messages.append(f"🎣 **Bait:** {bait_str}")
+    else:
+        messages.append("🎣 **Bait:** Ready!")
+
+    # Debait cooldown
+    author_id = str(ctx.author.id)
+    now = time.time()
+    last_used = debait_cooldowns.get(author_id, 0)
+    remaining = int(max(0, 86400 - (now - last_used)))
+    if remaining > 0:
+        hours = remaining // 3600
+        minutes = (remaining % 3600) // 60
+        messages.append(f"🪝 **Debait:** {hours}h {minutes}m remaining")
+    else:
+        messages.append("🪝 **Debait:** Ready!")
+
+    await ctx.send("\n".join(messages))
+
+# --- Show bait reasons (paginated) ---
+@bot.command()
+async def baits(ctx, member: discord.Member):
+    user_id = str(member.id)
+    if user_id not in baits_data or len(baits_data[user_id]) == 0:
+        await ctx.send(f"**{member.display_name}** has no recorded bait reasons.")
+        return
+
+    reasons = baits_data[user_id]
+    pages = [reasons[i:i+10] for i in range(0, len(reasons), 10)]
+    current_page = 0
+
+    embed = discord.Embed(
+        title=f"🎣 {member.display_name}'s Bait Reasons",
+        description="\n".join(f"{i+1}. {r}" for i, r in enumerate(pages[current_page])),
+        color=discord.Color.gold()
+    )
+    embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
+
+    view = View()
+
+    if len(pages) > 1:
+        button_prev = Button(label="⬅️", style=discord.ButtonStyle.gray)
+        button_next = Button(label="➡️", style=discord.ButtonStyle.gray)
+
+        async def prev_callback(interaction):
+            nonlocal current_page
+            if current_page > 0:
+                current_page -= 1
+                embed.description = "\n".join(f"{i+1 + current_page*10}. {r}" for i, r in enumerate(pages[current_page]))
+                embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                await interaction.response.defer()
+
+        async def next_callback(interaction):
+            nonlocal current_page
+            if current_page < len(pages)-1:
+                current_page += 1
+                embed.description = "\n".join(f"{i+1 + current_page*10}. {r}" for i, r in enumerate(pages[current_page]))
+                embed.set_footer(text=f"Page {current_page+1}/{len(pages)}")
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                await interaction.response.defer()
+
+        button_prev.callback = prev_callback
+        button_next.callback = next_callback
+        view.add_item(button_prev)
+        view.add_item(button_next)
+
+    await ctx.send(embed=embed, view=view)
+
+
+# --- Command to display available commands ---
+@bot.command()
+async def commands(ctx):
+    embed = discord.Embed(
+        title="🎣 Bait Bot Commands",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="!bait @user <reason>",
+        value="Add 1 point to a user for baiting. Reason optional. 30-minute cooldown",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!debait @user",
+        value="Remove 1 point from a user. 24-hour cooldown.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!score @user",
+        value="Check the bait score of a user (defaults to yourself if no user is mentioned).",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!leaderboard",
+        value="Display the top 10 users by bait points.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!baits @user",
+        value="View the most recent 10 bait reasons for a user.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!cooldowns",
+        value="See your current command cooldowns for bait and debait.",
+        inline=False
+    )
+
+    await ctx.send(embed=embed)
+
+
 # ---------- COOLDOWN ERROR HANDLER ----------
 @bot.event
 async def on_command_error(ctx, error):
@@ -249,14 +380,17 @@ async def on_command_error(ctx, error):
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
         seconds = remaining % 60
+
         time_parts = []
         if hours > 0:
             time_parts.append(f"{hours}h")
         if minutes > 0:
             time_parts.append(f"{minutes}m")
         time_parts.append(f"{seconds}s")
+
         await ctx.send(f"Wait {' '.join(time_parts)} before using this command again.")
     else:
         raise error
 
+# ------------------------------
 bot.run(BOT_TOKEN)
