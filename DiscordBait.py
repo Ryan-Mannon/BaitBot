@@ -8,7 +8,7 @@ import time
 
 # ---------- CONFIG ----------
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-DATA_FILE = "/root/BaitBot/bait_data.json"
+DATA_FILE = "/root/BaitBot/data/bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
 BAIT_COOLDOWN = 86400      # 30 minutes
 DEBAIT_COOLDOWN = 86400   # 24 hours
