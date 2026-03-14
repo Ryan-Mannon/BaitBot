@@ -8,7 +8,7 @@ import time
 
 # ---------- CONFIG ----------
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-DATA_FILE = "bait_data.json"
+DATA_FILE = "data/bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
 # ----------------------------
 
