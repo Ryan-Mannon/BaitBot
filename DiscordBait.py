@@ -135,11 +135,15 @@ async def score(ctx, member: discord.Member = None):
 # --- Paginated leaderboard ---
 @bot.command()
 async def leaderboard(ctx):
+    # Reload fresh data each time
+    data = load_data()
+    scores = data.get("scores", {})
+
     if not scores:
         await ctx.send("No bait has been recorded yet 🐟")
         return
 
-    # Sort all users by score descending
+    # Sort users by score descending
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     pages = [sorted_scores[i:i+10] for i in range(0, len(sorted_scores), 10)]
     current_page = 0
@@ -151,8 +155,9 @@ async def leaderboard(ctx):
         )
         lines = []
         for i, (user_id, score) in enumerate(pages[page_index]):
-            user = await bot.fetch_user(int(user_id))
-            lines.append(f"#{i+1 + page_index*10} — {user.display_name}: **{score}**")
+            user = bot.get_user(int(user_id))
+            username = user.display_name if user else f"Unknown User ({user_id})"
+            lines.append(f"#{i+1 + page_index*10} — {username}: **{score}**")
         embed.description = "\n".join(lines)
         embed.set_footer(text=f"Page {page_index+1}/{len(pages)}")
         return embed
@@ -168,8 +173,7 @@ async def leaderboard(ctx):
             nonlocal current_page
             if current_page > 0:
                 current_page -= 1
-                new_embed = await make_embed(current_page)
-                await interaction.response.edit_message(embed=new_embed, view=view)
+                await interaction.response.edit_message(embed=await make_embed(current_page), view=view)
             else:
                 await interaction.response.defer()
 
@@ -177,8 +181,7 @@ async def leaderboard(ctx):
             nonlocal current_page
             if current_page < len(pages) - 1:
                 current_page += 1
-                new_embed = await make_embed(current_page)
-                await interaction.response.edit_message(embed=new_embed, view=view)
+                await interaction.response.edit_message(embed=await make_embed(current_page), view=view)
             else:
                 await interaction.response.defer()
 
