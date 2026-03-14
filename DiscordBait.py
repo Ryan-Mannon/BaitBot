@@ -82,9 +82,35 @@ async def on_message(message):
 
 # --- Bait command ---
 @bot.command()
-@commands.cooldown(1, 86400, commands.BucketType.user)
 async def bait(ctx, member: discord.Member, *, reason: str = None):
+    if member.id == ctx.author.id:
+        await ctx.send("You cannot bait yourself!")
+        return
+
+    author_id = str(ctx.author.id)
     user_id = str(member.id)
+    now = time.time()
+    cooldown_seconds = 86400  # 24 hours, adjust as needed
+
+    # Load last used time for this user
+    last_used = debait_cooldowns.get(author_id, {}).get("bait", 0)
+
+    # Check cooldown
+    if now - last_used < cooldown_seconds:
+        remaining = int(cooldown_seconds - (now - last_used))
+        hours = remaining // 3600
+        minutes = (remaining % 3600) // 60
+        seconds = remaining % 60
+
+        time_parts = []
+        if hours > 0:
+            time_parts.append(f"{hours}h")
+        if minutes > 0 or hours > 0:
+            time_parts.append(f"{minutes}m")
+        time_parts.append(f"{seconds}s")
+
+        await ctx.send(f"Wait {' '.join(time_parts)} before using Bait again.")
+        return
 
     # Update score
     scores[user_id] = scores.get(user_id, 0) + 1
@@ -97,11 +123,17 @@ async def bait(ctx, member: discord.Member, *, reason: str = None):
         if len(baits_data[user_id]) > 10:
             baits_data[user_id] = baits_data[user_id][-10:]
 
+    # Update persistent cooldown for this user
+    if author_id not in debait_cooldowns:
+        debait_cooldowns[author_id] = {}
+    debait_cooldowns[author_id]["bait"] = now
+
+    # Save everything
     save_data({"scores": scores, "baits": baits_data, "debait_cooldowns": debait_cooldowns})
 
     reply = f"🎣 **{member.display_name}** has baited! ➕ 1 point (Total: **{scores[user_id]}**)"
     if reason:
-        reply += "\n Reason recorded!"
+        reply += "\nReason recorded!"
     await ctx.send(reply)
 
 # --- Debait command ---
