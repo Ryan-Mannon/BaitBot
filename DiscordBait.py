@@ -10,7 +10,7 @@ import time
 BOT_TOKEN = os.getenv("DISCORD_TOKEN")
 DATA_FILE = "bait_data.json"
 AUTO_REACT_EMOJI = "🎣"
-BAIT_COOLDOWN = 1800      # 30 minutes
+BAIT_COOLDOWN = 86400      # 30 minutes
 DEBAIT_COOLDOWN = 86400   # 24 hours
 OWNER_ID = 291415368722022400
 # ----------------------------
