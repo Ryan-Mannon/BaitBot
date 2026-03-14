@@ -173,6 +173,74 @@ async def delete(ctx, member: discord.Member):
     else:
         await ctx.send(f"No data found for **{member.display_name}**.")
 
+
+
+
+# --- Leaderboard ---
+@bot.command()
+async def leaderboard(ctx):
+    data = load_data()
+    scores = data.get("scores", {})
+
+    if not scores:
+        await ctx.send("No bait has been recorded yet 🐟")
+        return
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    pages = [sorted_scores[i:i+10] for i in range(0, len(sorted_scores), 10)]
+    current_page = 0
+
+    async def make_embed(page_index):
+        embed = discord.Embed(
+            title="🎣 Bait Leaderboard",
+            color=discord.Color.gold()
+        )
+        lines = []
+        for i, (user_id, score) in enumerate(pages[page_index]):
+            user = await bot.fetch_user(int(user_id))
+            lines.append(f"#{i+1 + page_index*10} — {user.display_name}: **{score}**")
+        embed.description = "\n".join(lines)
+        embed.set_footer(text=f"Page {page_index+1}/{len(pages)}")
+        return embed
+
+    embed = await make_embed(current_page)
+    view = View()
+
+    if len(pages) > 1:
+        button_prev = Button(label="⬅️", style=discord.ButtonStyle.gray)
+        button_next = Button(label="➡️", style=discord.ButtonStyle.gray)
+
+        async def prev_callback(interaction):
+            nonlocal current_page
+            if current_page > 0:
+                current_page -= 1
+                new_embed = await make_embed(current_page)
+                await interaction.response.edit_message(embed=new_embed, view=view)
+            else:
+                await interaction.response.defer()
+
+        async def next_callback(interaction):
+            nonlocal current_page
+            if current_page < len(pages) - 1:
+                current_page += 1
+                new_embed = await make_embed(current_page)
+                await interaction.response.edit_message(embed=new_embed, view=view)
+            else:
+                await interaction.response.defer()
+
+        button_prev.callback = prev_callback
+        button_next.callback = next_callback
+        view.add_item(button_prev)
+        view.add_item(button_next)
+
+    await ctx.send(embed=embed, view=view)
+
+
+
+
+
+
+
 # ---------- COOLDOWN ERROR HANDLER ----------
 @bot.event
 async def on_command_error(ctx, error):
