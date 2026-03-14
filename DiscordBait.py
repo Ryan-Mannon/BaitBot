@@ -263,7 +263,7 @@ async def cooldowns(ctx):
     # Bait cooldown
     bait_cooldown = bot.get_command("bait").get_cooldown_retry_after(ctx)
     if bait_cooldown:
-        messages.append(f"🎣 **Bait:** {format_cooldown(int(bait_cooldown))} remaining")
+        messages.append(f"🎣 **Bait:** {format_cooldown(int(bait_cooldown))}")
     else:
         messages.append("🎣 **Bait:** Ready!")
 
@@ -273,7 +273,7 @@ async def cooldowns(ctx):
     last_used = debait_cooldowns.get(author_id, 0)
     remaining = int(max(0, 86400 - (now - last_used)))
     if remaining > 0:
-        messages.append(f"🪝 **Debait:** {format_cooldown(remaining)} remaining")
+        messages.append(f"🪝 **Debait:** {format_cooldown(remaining)}")
     else:
         messages.append("🪝 **Debait:** Ready!")
 
